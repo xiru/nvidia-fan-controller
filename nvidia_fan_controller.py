@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import sys
 import logging
 import subprocess
 import re
@@ -12,10 +13,11 @@ logger = logging.getLogger('nvidia-fan-controller')
 
 class NVidiaFanController(object):
 
-    def __init__(self, interval_secs=2):
-        self.fan_control = False
+    def __init__(self, interval_secs, base_temp):
         self.interval_secs = interval_secs
-        self.lookup()
+        self.base_temp = base_temp
+        self.fan_control = False
+        self._lookup()
 
     def _run_cmd(self, cmd):
         logger.debug("Running cmd: %s", ' '.join(cmd))
@@ -42,7 +44,7 @@ class NVidiaFanController(object):
             raise RuntimeError("no gpu detected")
         return measurements
 
-    def lookup(self):
+    def _lookup(self):
         self.measurements = self.get_measurements()
 
     def disable_manual_gpu_fan_control(self):
@@ -57,35 +59,34 @@ class NVidiaFanController(object):
         self._run_cmd(['nvidia-settings', '--assign', 'GPUFanControlState=1', '--assign', config])
         self.fan_control = True
 
+    @property
     def idle(self):
-        ''' check if all gpus are idle
-        '''
         for _, temperature, _, utilization in self.measurements:
-            if temperature > 40 or utilization > 10:
+            if temperature > self.base_temp or utilization > 10:
                 return False
         return True
 
     def _run(self):
         while True:
-            if self.idle():
+            if self.idle:
                 self.disable_manual_gpu_fan_control()
             else:
                 for index, temperature, fan_speed, _ in self.measurements:
-                    # predictable (hardcoded) fan speed ramp
-                    if temperature > 60:
+                    # predictable fan speed ramp
+                    if temperature > self.base_temp + 20:
                         new_fan_speed = 100
-                    elif temperature > 55:
+                    elif temperature > self.base_temp + 15:
                         new_fan_speed = 90
-                    elif temperature > 50:
+                    elif temperature > self.base_temp + 10:
                         new_fan_speed = 75
-                    elif temperature > 45:
+                    elif temperature > self.base_temp + 5:
                         new_fan_speed = 60
                     else:
                         new_fan_speed = 30
                     if abs(new_fan_speed - fan_speed) > 2:
                         self.set_fan_speed(index, new_fan_speed)
             sleep(self.interval_secs)
-            self.lookup()
+            self._lookup()
 
     def run(self):
         try:
@@ -100,10 +101,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--interval-secs', type=int, default=5,
                         help="number of seconds between consecutive updates")
+    parser.add_argument('--base-temp', type=int, default=40,
+                        help="base temperature used for fan speed ramp (degrees Celsius)")
     parser.add_argument('--log-level', choices=('DEBUG', 'INFO', 'WARN'), default='INFO',
                         help="verbosity level")
     args = parser.parse_args()
 
     logging.basicConfig(level=getattr(logging, args.log_level))
 
-    NVidiaFanController(args.interval_secs).run()
+    if args.base_temp < 35 or args.base_temp > 60:
+        msg = f"Invalid base temperature: {args.base_temp}. Acceptable range is [35-60] degrees Celsius."
+        logger.error(msg)
+        sys.exit(1)
+
+    NVidiaFanController(args.interval_secs, args.base_temp).run()
