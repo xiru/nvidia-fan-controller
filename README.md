@@ -1,12 +1,12 @@
 # NVIDIA GPU Fan Controller for linux
 
-A Python based standalone (and a litle 'opinionated') implementation of NVIDIA GPUs fan controller.
+A simplified (and a litle 'opinionated') Python based implementation of NVIDIA GPUs fan controller.
 
 ```
 python3 nvidia_fan_controller.py
 ```
 
-This script uses an adhoc heuristic algorithm, increasing the GPU fan speed based on its temperature and utilization. The implementation keeps GPU 'silent' while idle: all GPUs temperature are smaller than a certain threshold (default is 40 degrees Celsius) and GPUs utilization are less than 10%.
+This script uses an adhoc heuristic algorithm, increasing the GPU fan speed based on GPUs temperature and utilization. The implementation keeps GPUs 'silent' when idle: all GPUs temperature are smaller than a certain threshold (default is 40 degrees Celsius) and GPUs utilization are less than 10%. When GPUs are busy and getting hot, the highest GPU temperature is used to decide how fast ALL the fans should spin.
 
 ## Dependencies
 
@@ -20,6 +20,7 @@ Please make sure that these are installed on your system.
 Also, make sure that you've enabled manual fan control on your system. This can be done by using the `nvidia-xconfig` command-line utility:
 
 ```
+nvidia-xconfig --enable-all-gpus
 nvidia-xconfig --cool-bits=4
 ```
 
