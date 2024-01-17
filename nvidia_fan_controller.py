@@ -36,10 +36,10 @@ class NVidiaFanController(object):
         return '' if p.stdout is None else p.stdout.read().decode()
 
     def get_measurements(self):
-        ''' retrieve metrics using nvidia-smi as [(index, temperature, fan_speed, utilization)]
+        ''' retrieve metrics using nvidia-smi as [(index, temperature, utilization)]
         '''
-        stdout = self._run_cmd(['nvidia-smi', '--query-gpu=index,temperature.gpu,fan.speed,utilization.gpu', '--format=csv,noheader'])
-        measurements = [tuple(map(int, values)) for values in re.findall(r'(\d+), (\d+), (\d+) %, (\d+) %', stdout, flags=re.MULTILINE)]
+        stdout = self._run_cmd(['nvidia-smi', '--query-gpu=index,temperature.gpu,utilization.gpu', '--format=csv,noheader'])
+        measurements = [tuple(map(int, values)) for values in re.findall(r'(\d+), (\d+), (\d+) %', stdout, flags=re.MULTILINE)]
         if not measurements:
             raise RuntimeError("no gpu detected")
         return measurements
@@ -53,38 +53,45 @@ class NVidiaFanController(object):
             self._run_cmd(['nvidia-settings', '--assign', 'GPUFanControlState=0'])
             self.fan_control = False
 
-    def set_fan_speed(self, index, fan_speed):
-        logger.info("Setting new fan speed %s on gpu %d", fan_speed, index)
-        config = f'[fan-{index:d}]/GPUTargetFanSpeed={fan_speed:d}'
-        self._run_cmd(['nvidia-settings', '--assign', 'GPUFanControlState=1', '--assign', config])
+    def set_fan_speed(self, fan_speed):
+        logger.info("Setting new fan speed: %d", fan_speed)
+        self._run_cmd(['nvidia-settings', '--assign', 'GPUFanControlState=1', '--assign', f'GPUTargetFanSpeed={fan_speed}'])
         self.fan_control = True
 
     @property
     def idle(self):
-        for _, temperature, _, utilization in self.measurements:
+        # TODO: consider GPUs idle when this condition happens during 5 minutes.
+        for _, temperature, utilization in self.measurements:
             if temperature > self.base_temp or utilization > 10:
                 return False
         return True
+
+    @property
+    def max_temperature(self):
+        return max([m[1] for m in self.measurements])
 
     def _run(self):
         while True:
             if self.idle:
                 self.disable_manual_gpu_fan_control()
             else:
-                for index, temperature, fan_speed, _ in self.measurements:
-                    # predictable fan speed ramp
-                    if temperature > self.base_temp + 20:
-                        new_fan_speed = 100
-                    elif temperature > self.base_temp + 15:
-                        new_fan_speed = 90
-                    elif temperature > self.base_temp + 10:
-                        new_fan_speed = 75
-                    elif temperature > self.base_temp + 5:
-                        new_fan_speed = 60
-                    else:
-                        new_fan_speed = 30
-                    if abs(new_fan_speed - fan_speed) > 2:
-                        self.set_fan_speed(index, new_fan_speed)
+                temperature = self.max_temperature
+
+                # predictable fan speed ramp
+                if temperature > self.base_temp + 20:
+                    new_fan_speed = 100
+                elif temperature > self.base_temp + 15:
+                    new_fan_speed = 90
+                elif temperature > self.base_temp + 10:
+                    new_fan_speed = 75
+                elif temperature > self.base_temp + 5:
+                    new_fan_speed = 60
+                else:
+                    new_fan_speed = 30
+
+                # TODO: don't keep trying to set the same fan speed repeatedly
+                self.set_fan_speed(new_fan_speed)
+
             sleep(self.interval_secs)
             self._lookup()
 
