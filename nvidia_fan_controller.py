@@ -17,7 +17,8 @@ class NVidiaFanController(object):
         self.interval_secs = interval_secs
         self.base_temp = base_temp
         self.fan_control = False
-        self._lookup()
+        self.last_fan_speed = None
+        self._lookup(False)
 
     def _run_cmd(self, cmd):
         logger.debug("Running cmd: %s", ' '.join(cmd))
@@ -44,7 +45,9 @@ class NVidiaFanController(object):
             raise RuntimeError("no gpu detected")
         return measurements
 
-    def _lookup(self):
+    def _lookup(self, delay=True):
+        if delay:
+            sleep(self.interval_secs)
         self.measurements = self.get_measurements()
 
     def disable_manual_gpu_fan_control(self):
@@ -60,7 +63,6 @@ class NVidiaFanController(object):
 
     @property
     def idle(self):
-        # TODO: consider GPUs idle when this condition happens during 5 minutes.
         for _, temperature, utilization in self.measurements:
             if temperature > self.base_temp or utilization > 10:
                 return False
@@ -89,10 +91,11 @@ class NVidiaFanController(object):
                 else:
                     new_fan_speed = 30
 
-                # TODO: don't keep trying to set the same fan speed repeatedly
-                self.set_fan_speed(new_fan_speed)
+                # don't keep trying to set the same fan speed repeatedly
+                if self.last_fan_speed is None or new_fan_speed != self.last_fan_speed:
+                    self.set_fan_speed(new_fan_speed)
+                    self.last_fan_speed = new_fan_speed
 
-            sleep(self.interval_secs)
             self._lookup()
 
     def run(self):
