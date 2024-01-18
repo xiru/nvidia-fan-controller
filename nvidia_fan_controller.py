@@ -55,6 +55,7 @@ class NVidiaFanController(object):
             logger.debug("Disabling manual gpu fan control")
             self._run_cmd(['nvidia-settings', '--assign', 'GPUFanControlState=0'])
             self.fan_control = False
+            self.last_fan_speed = None
 
     def set_fan_speed(self, fan_speed):
         logger.info("Setting new fan speed: %d", fan_speed)
@@ -92,7 +93,7 @@ class NVidiaFanController(object):
                     new_fan_speed = 30
 
                 # don't keep trying to set the same fan speed repeatedly
-                if self.last_fan_speed is None or new_fan_speed != self.last_fan_speed:
+                if new_fan_speed != self.last_fan_speed:
                     self.set_fan_speed(new_fan_speed)
                     self.last_fan_speed = new_fan_speed
 
